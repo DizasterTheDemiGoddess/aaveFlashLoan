@@ -5,7 +5,7 @@ import { Executor } from "./executor";
 
 async function main() {
   const provider = buildProvider();
-  const signer = new ethers.Wallet(CONFIG.privateKey, provider);
+  const signer = new ethers.Wallet(CONFIG.privateKey || "0x0000000000000000000000000000000000000000000000000000000000000001", provider);
 
   const flashArbAddress = process.env.FLASH_ARB_ADDRESS;
   if (!flashArbAddress) {
@@ -16,7 +16,9 @@ async function main() {
   const scanner = new TwoDexScanner(provider);
   const executor = new Executor(provider, signer, flashArbAddress);
 
-  while (true) {
+  const oneShot = (process.env.ONE_SHOT || "false").toLowerCase() === "true";
+
+  do {
     try {
       const opp = await scanner.findOpportunity();
       if (opp) {
@@ -25,7 +27,6 @@ async function main() {
         const roundTrip = opp.amountOutOnB;
         let gasCostWei = 0n;
         if (CONFIG.gasPriceGwei) {
-          // rough constant gas budget; refine with estimator when executing
           gasCostWei = ethers.parseUnits(String(CONFIG.gasPriceGwei), "gwei") * 600000n;
         }
         const net = roundTrip - size - premium - gasCostWei;
@@ -37,12 +38,15 @@ async function main() {
         } else {
           console.log("Skipping, net insufficient:", net.toString());
         }
+      } else {
+        console.log("No opportunity found in this scan.");
       }
     } catch (e) {
       console.error("loop error", e);
     }
+    if (oneShot) break;
     await new Promise((r) => setTimeout(r, 2000));
-  }
+  } while (true);
 }
 
 main().catch((e) => {
